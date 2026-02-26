@@ -12,7 +12,7 @@ Browser → Node BFF (:3000) → FastAPI (:8000) → Qdrant (vectors)
                                              → DuckDB (SQL analytics)
 ```
 
-The Node BFF (Express) proxies all `/api/*` requests to the FastAPI backend, stripping the `/api` prefix before forwarding.
+The Node BFF (Express) handles `/api/*` routes with explicit handlers that forward requests to FastAPI.
 
 ---
 
@@ -97,7 +97,7 @@ npm run dev
 | GET | /health | Basic liveness check |
 | GET | /health/ready | Readiness check (verifies all dependencies) |
 
-> **Note:** The Node BFF proxies `/api/*` to FastAPI, stripping the `/api` prefix. For example, `POST /api/query` from the browser becomes `POST /query` on the FastAPI server.
+> **Note:** The Node BFF forwards `/api/*` requests to FastAPI with explicit route handlers. For example, `POST /api/query` from the browser is forwarded to `POST /query` on the FastAPI server. In dev mode, Vite runs as Express middleware for HMR.
 
 ---
 
@@ -127,9 +127,7 @@ Run from the `web/` directory (or via `./run.sh`):
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| dev | concurrently "dev:vue" "dev:server" | Start Vue + BFF together |
-| dev:vue | vite | Vite dev server with HMR |
-| dev:server | tsx watch server/index.ts | BFF with auto-reload |
+| dev | tsx watch server/index.ts | Express BFF + Vite HMR middleware |
 | build | vue-tsc && vite build | Type-check + production build |
 | start | node --import tsx server/index.ts | Production server |
 | preview | build + start | Build then serve |
