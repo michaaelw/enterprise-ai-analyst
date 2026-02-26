@@ -32,3 +32,7 @@ coverage.xml
 *~
 
 infra/data/
+
+# Web frontend
+web/node_modules/
+web/dist/
