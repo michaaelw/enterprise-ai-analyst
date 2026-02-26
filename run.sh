@@ -133,6 +133,23 @@ cmd_dev() {
     warn "Qdrant did not respond on :6333 — continuing anyway"
   fi
 
+  # ---- Wait for Neo4j ----
+  local neo4j_ready=false
+  for i in $(seq 1 9); do
+    if curl -sf http://localhost:7474 &>/dev/null; then
+      neo4j_ready=true
+      break
+    fi
+    info "  Neo4j not ready yet, retrying (${i}/9)..."
+    sleep 3
+  done
+
+  if [[ "$neo4j_ready" == true ]]; then
+    info "Neo4j is ready"
+  else
+    warn "Neo4j did not respond on :7474 — continuing anyway"
+  fi
+
   # ---- Backend ----
   activate_venv
   info "Starting FastAPI backend on :8000..."
