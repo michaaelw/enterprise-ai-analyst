@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
+    # Provider selection
+    llm_provider_type: str = "anthropic"
+    embedding_provider_type: str = "openai"
+
+    # Ollama
+    ollama_url: str = "http://localhost:11434"
+    ollama_llm_model: str = "llama3.2"
+    ollama_embed_model: str = "nomic-embed-text"
+    ollama_embed_dimensions: int = 768
+
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "enterprise_docs"

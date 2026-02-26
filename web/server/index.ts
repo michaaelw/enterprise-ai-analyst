@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { readFileSync } from 'fs'
 import healthRoutes from './routes/health.js'
 import apiRoutes from './routes/api.js'
+import { attachWebSocket } from './ws.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDev = process.env.NODE_ENV !== 'production'
@@ -49,9 +50,11 @@ async function createApp() {
     }
   })
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`BFF listening on http://localhost:${PORT}`)
   })
+
+  attachWebSocket(server)
 }
 
 createApp()

@@ -50,5 +50,7 @@ router.get('/health', (req, res) => proxyToFastAPI('/health', req, res))
 router.get('/health/ready', (req, res) => proxyToFastAPI('/health/ready', req, res))
 router.post('/query', (req, res) => proxyToFastAPI('/query', req, res))
 router.post('/ingest', (req, res) => proxyToFastAPI('/ingest', req, res))
+router.post('/retrieve', (req, res) => proxyToFastAPI('/retrieve', req, res))
+router.post('/generate', (req, res) => proxyToFastAPI('/generate', req, res))
 
 export default router

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
 from src.config import Settings
 from src.integrations.vector_db.qdrant_store import QdrantStore
 from src.integrations.graph_db.neo4j_store import Neo4jStore
-from src.integrations.llm_providers.openai_provider import OpenAILLMProvider, OpenAIEmbeddingProvider
-from src.integrations.llm_providers.anthropic_provider import AnthropicLLMProvider
 from src.rag.embeddings.pipeline import EmbeddingPipeline
 from src.rag.ingestion import IngestionPipeline
 from src.rag.retrieval.hybrid import HybridRetriever
@@ -19,8 +19,8 @@ class AppState:
     settings: Settings
     vector_store: QdrantStore
     graph_store: Neo4jStore
-    embedding_provider: OpenAIEmbeddingProvider
-    llm_provider: AnthropicLLMProvider
+    embedding_provider: Any
+    llm_provider: Any
     embedding_pipeline: EmbeddingPipeline
     ingestion_pipeline: IngestionPipeline
     hybrid_retriever: HybridRetriever

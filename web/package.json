@@ -12,11 +12,13 @@
   "dependencies": {
     "express": "^4.21.0",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.2.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",

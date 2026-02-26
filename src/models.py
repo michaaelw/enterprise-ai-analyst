@@ -73,3 +73,27 @@ class QueryResponse(BaseModel):
     query: str
     strategy: str
     latency_ms: float
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    strategy: Literal["hybrid", "vector_only"] = "hybrid"
+
+
+class RetrieveResponse(BaseModel):
+    sources: list[RetrievalResult]
+    query: str
+    strategy: str
+    context: str          # pre-built context string for /generate
+    latency_ms: float
+
+
+class GenerateRequest(BaseModel):
+    prompt: str
+    stream: bool = False  # when True, returns SSE instead of JSON
+
+
+class GenerateResponse(BaseModel):
+    answer: str
+    latency_ms: float

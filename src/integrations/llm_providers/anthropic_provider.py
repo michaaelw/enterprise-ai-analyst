@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -27,3 +29,13 @@ class AnthropicLLMProvider:
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text
+
+    async def stream(self, prompt: str, *, max_tokens: int = 4096) -> AsyncIterator[str]:
+        """Stream text tokens for the given prompt."""
+        async with self._client.messages.stream(
+            model=self._model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
