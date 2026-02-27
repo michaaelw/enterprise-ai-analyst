@@ -25,7 +25,9 @@ class TestDuckDBStoreConnect:
         assert "quarterly_financials" in table_names
         assert "revenue_by_segment" in table_names
         assert "headcount_by_department" in table_names
-        assert len(table_names) == 3
+        assert "chat_sessions" in table_names
+        assert "chat_messages" in table_names
+        assert len(table_names) == 5
 
 
 class TestDuckDBStoreSeedData:

@@ -63,4 +63,33 @@ export interface WsEchoMessage { type: 'echo'; content: string }
 
 export type WsMessage = WsSourcesMessage | WsTokenMessage | WsFullMessage | WsDoneMessage | WsErrorMessage | WsEchoMessage
 
-export interface WsChatRequest { type: 'chat'; content: string; strategy?: string; top_k?: number; stream?: boolean }
+export interface WsChatRequest { type: 'chat'; content: string; strategy?: string; top_k?: number; stream?: boolean; session_id?: string }
+
+// Chat history types
+export interface ChatSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+export interface ChatSessionListResponse {
+  sessions: ChatSession[]
+}
+
+export interface ChatMessageRecord {
+  id: string
+  session_id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources_json: string
+  strategy?: string
+  latency_ms?: number
+  created_at: string
+}
+
+export interface ChatHistoryResponse {
+  session: ChatSession
+  messages: ChatMessageRecord[]
+}

@@ -1,4 +1,4 @@
-import type { QueryRequest, QueryResponse, IngestRequest, IngestResponse, HealthResponse } from '@/types'
+import type { QueryRequest, QueryResponse, IngestRequest, IngestResponse, HealthResponse, ChatSessionListResponse, ChatHistoryResponse } from '@/types'
 
 const BASE = '/api'
 
@@ -34,5 +34,13 @@ export const api = {
 
   healthReady(): Promise<HealthResponse> {
     return request('/health/ready')
+  },
+
+  listSessions(): Promise<ChatSessionListResponse> {
+    return request('/history/sessions')
+  },
+
+  getSession(sessionId: string): Promise<ChatHistoryResponse> {
+    return request(`/history/sessions/${sessionId}`)
   },
 }

@@ -1,10 +1,13 @@
 """FastAPI application with lifespan management."""
 from __future__ import annotations
 
+import pathlib
+import structlog
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
+from src.models import Document
 
 from src.config import get_settings
 from src.observability.logging import configure_logging
@@ -23,7 +26,35 @@ from src.agents.sql_agent import SQLAgent
 from src.agents.rag_agent import RAGAgent
 from src.agents.orchestrator import OrchestratorAgent
 from src.api.dependencies import AppState, set_state
-from src.api.routes import health, query, ingest, retrieve, generate
+from src.api.routes import health, query, ingest, retrieve, generate, history
+
+
+logger = structlog.get_logger(__name__)
+
+
+async def _seed_demo_documents(pipeline: IngestionPipeline) -> None:
+    """Seed demo documents from demo/sample_data/ if available."""
+    demo_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "demo" / "sample_data"
+    if not demo_dir.exists():
+        logger.warning("demo_dir_not_found", path=str(demo_dir))
+        return
+
+    md_files = sorted(demo_dir.glob("*.md"))
+    if not md_files:
+        logger.info("no_demo_documents_found")
+        return
+
+    logger.info("seeding_demo_documents", count=len(md_files))
+    for md_file in md_files:
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            doc = Document(content=content, source=md_file.name)
+            await pipeline.ingest(doc)
+            logger.info("demo_document_seeded", source=md_file.name)
+        except Exception:
+            logger.exception("demo_document_seed_failed", source=md_file.name)
+
+    logger.info("demo_seeding_complete")
 
 
 @asynccontextmanager
@@ -115,6 +146,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         orchestrator=orchestrator,
     ))
 
+    # Seed demo documents if Qdrant is empty
+    point_count = await vector_store.count()
+    if point_count == 0:
+        await _seed_demo_documents(ingestion_pipeline)
+    else:
+        logger.info("demo_seed_skipped", point_count=point_count)
+
     yield
 
     await duckdb_store.close()
@@ -128,3 +166,4 @@ app.include_router(query.router)
 app.include_router(ingest.router)
 app.include_router(retrieve.router)
 app.include_router(generate.router)
+app.include_router(history.router)

@@ -97,3 +97,35 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     answer: str
     latency_ms: float
+
+
+# ---------------------------------------------------------------------------
+# Chat history models
+# ---------------------------------------------------------------------------
+
+class ChatSession(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    title: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    message_count: int = 0
+
+
+class ChatMessage(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    session_id: UUID
+    role: Literal["user", "assistant"]
+    content: str
+    sources_json: str = "[]"
+    strategy: str | None = None
+    latency_ms: float | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: list[ChatSession]
+
+
+class ChatHistoryResponse(BaseModel):
+    session: ChatSession
+    messages: list[ChatMessage]

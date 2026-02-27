@@ -38,6 +38,29 @@ CREATE TABLE IF NOT EXISTS headcount_by_department (
 )
 """
 
+_DDL_CHAT_SESSIONS = """
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id VARCHAR PRIMARY KEY,
+    title VARCHAR DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    message_count INTEGER DEFAULT 0
+)
+"""
+
+_DDL_CHAT_MESSAGES = """
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id VARCHAR PRIMARY KEY,
+    session_id VARCHAR NOT NULL,
+    role VARCHAR NOT NULL,
+    content TEXT NOT NULL,
+    sources_json TEXT DEFAULT '[]',
+    strategy VARCHAR,
+    latency_ms DOUBLE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
 _SEED_QUARTERLY_FINANCIALS = """
 INSERT INTO quarterly_financials
     (quarter, total_revenue_m, gross_margin, operating_margin, free_cash_flow_m, headcount)
@@ -127,6 +150,8 @@ class DuckDBStore:
             _DDL_QUARTERLY_FINANCIALS,
             _DDL_REVENUE_BY_SEGMENT,
             _DDL_HEADCOUNT_BY_DEPARTMENT,
+            _DDL_CHAT_SESSIONS,
+            _DDL_CHAT_MESSAGES,
         ):
             self._conn.execute(ddl)
 
@@ -245,3 +270,64 @@ class DuckDBStore:
         schema = await asyncio.to_thread(self._get_schema_sync)
         logger.debug("duckdb.get_schema.done")
         return schema
+
+    # ------------------------------------------------------------------
+    # Chat history
+    # ------------------------------------------------------------------
+
+    async def create_session(self, session_id: str, title: str) -> None:
+        """Create a new chat session."""
+        await asyncio.to_thread(
+            self._execute_sync,
+            "INSERT INTO chat_sessions (id, title) VALUES (?, ?)",
+            {"id": session_id, "title": title},
+        )
+
+    async def save_message(self, msg: dict[str, Any]) -> None:
+        """Insert a chat message and update the parent session."""
+        await asyncio.to_thread(
+            self._execute_sync,
+            """INSERT INTO chat_messages (id, session_id, role, content, sources_json, strategy, latency_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            {
+                "id": msg["id"],
+                "session_id": msg["session_id"],
+                "role": msg["role"],
+                "content": msg["content"],
+                "sources_json": msg.get("sources_json", "[]"),
+                "strategy": msg.get("strategy"),
+                "latency_ms": msg.get("latency_ms"),
+            },
+        )
+        await asyncio.to_thread(
+            self._execute_sync,
+            """UPDATE chat_sessions
+               SET updated_at = CURRENT_TIMESTAMP,
+                   message_count = (SELECT COUNT(*) FROM chat_messages WHERE session_id = ?)
+               WHERE id = ?""",
+            {"sid1": msg["session_id"], "sid2": msg["session_id"]},
+        )
+
+    async def list_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent chat sessions ordered by last activity."""
+        return await asyncio.to_thread(
+            self._execute_sync,
+            "SELECT * FROM chat_sessions ORDER BY updated_at DESC LIMIT ?",
+            {"limit": limit},
+        )
+
+    async def get_session_messages(self, session_id: str) -> dict[str, Any]:
+        """Return a session and all its messages."""
+        sessions = await asyncio.to_thread(
+            self._execute_sync,
+            "SELECT * FROM chat_sessions WHERE id = ?",
+            {"id": session_id},
+        )
+        if not sessions:
+            return {"session": None, "messages": []}
+        messages = await asyncio.to_thread(
+            self._execute_sync,
+            "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC",
+            {"sid": session_id},
+        )
+        return {"session": sessions[0], "messages": messages}

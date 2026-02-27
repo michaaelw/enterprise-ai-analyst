@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onUnmounted } from 'vue'
-import type { ChatEntry, WsMessage } from '@/types'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import type { ChatEntry, ChatSession, ChatMessageRecord, WsMessage } from '@/types'
 import { useWebSocket } from '@/api/ws'
+import { api } from '@/api/client'
 import ChatMessage from '@/components/ChatMessage.vue'
 
 const messages = ref<ChatEntry[]>([])
@@ -13,6 +14,12 @@ const streamEnabled = ref(true)
 const chatContainer = ref<HTMLElement | null>(null)
 const settingsOpen = ref(false)
 const activeAssistantId = ref<string | null>(null)
+
+// Session tracking
+const sessionId = ref<string>(crypto.randomUUID())
+const sessions = ref<ChatSession[]>([])
+const sidebarOpen = ref(false)
+const sessionsLoading = ref(false)
 
 const { connected, send, onMessage } = useWebSocket()
 
@@ -130,6 +137,56 @@ onUnmounted(() => {
   unsubscribe()
 })
 
+async function loadSessions() {
+  sessionsLoading.value = true
+  try {
+    const data = await api.listSessions()
+    sessions.value = data.sessions
+  } catch {
+    // silently ignore — sidebar just stays empty
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function loadSession(id: string) {
+  try {
+    const data = await api.getSession(id)
+    sessionId.value = id
+    messages.value = data.messages.map((m: ChatMessageRecord) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      sources: m.sources_json ? JSON.parse(m.sources_json) : undefined,
+      strategy: m.strategy ?? undefined,
+      latencyMs: m.latency_ms ?? undefined,
+      timestamp: new Date(m.created_at),
+    }))
+    sidebarOpen.value = false
+    await scrollToBottom()
+  } catch {
+    // ignore
+  }
+}
+
+function newChat() {
+  sessionId.value = crypto.randomUUID()
+  messages.value = []
+  activeAssistantId.value = null
+  isLoading.value = false
+}
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value
+  if (sidebarOpen.value) {
+    loadSessions()
+  }
+}
+
+onMounted(() => {
+  loadSessions()
+})
+
 function submit() {
   const query = inputQuery.value.trim()
   if (!query || isLoading.value) return
@@ -163,6 +220,7 @@ function submit() {
     strategy: strategy.value,
     top_k: topK.value,
     stream: streamEnabled.value,
+    session_id: sessionId.value,
   })
 }
 
@@ -180,7 +238,45 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full">
+    <!-- Sidebar -->
+    <Transition name="sidebar">
+      <div v-if="sidebarOpen" class="w-64 border-r bg-white flex flex-col shrink-0">
+        <div class="p-3 border-b flex items-center justify-between">
+          <span class="text-sm font-medium text-gray-700">History</span>
+          <button class="text-gray-400 hover:text-gray-600" @click="sidebarOpen = false">
+            <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
+          </button>
+        </div>
+        <div class="p-2">
+          <button
+            class="w-full text-left px-3 py-2 text-sm rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+            @click="newChat"
+          >
+            + New Chat
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+          <div v-if="sessionsLoading" class="text-xs text-gray-400 text-center py-4">Loading...</div>
+          <button
+            v-for="s in sessions"
+            :key="s.id"
+            class="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-100 transition-colors truncate"
+            :class="s.id === sessionId ? 'bg-gray-100 font-medium' : 'text-gray-600'"
+            @click="loadSession(s.id)"
+          >
+            {{ s.title || 'Untitled' }}
+            <span class="block text-xs text-gray-400">{{ s.message_count }} messages</span>
+          </button>
+          <div v-if="!sessionsLoading && sessions.length === 0" class="text-xs text-gray-400 text-center py-4">No conversations yet</div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Main chat area -->
+    <div class="flex flex-col flex-1 min-w-0">
     <!-- Messages -->
     <div ref="chatContainer" class="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-6">
       <!-- Empty state -->
@@ -273,6 +369,18 @@ function onKeydown(e: KeyboardEvent) {
       </div>
 
       <div class="flex items-end gap-2">
+        <!-- Sidebar toggle -->
+        <button
+          class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors shrink-0"
+          :class="sidebarOpen ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'"
+          @click="toggleSidebar"
+          title="Chat history"
+        >
+          <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clip-rule="evenodd" />
+          </svg>
+        </button>
+
         <!-- Gear / settings toggle -->
         <button
           class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors shrink-0"
@@ -317,6 +425,7 @@ function onKeydown(e: KeyboardEvent) {
       <!-- Keyboard hint -->
       <p class="text-xs text-gray-400 mt-1">Enter to send · Shift+Enter for new line</p>
     </div>
+    </div><!-- /main chat area -->
   </div>
 </template>
 
@@ -327,5 +436,14 @@ function onKeydown(e: KeyboardEvent) {
 .msg-enter-from {
   opacity: 0;
   transform: translateY(8px);
+}
+.sidebar-enter-active,
+.sidebar-leave-active {
+  transition: all 0.2s ease;
+}
+.sidebar-enter-from,
+.sidebar-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
 }
 </style>

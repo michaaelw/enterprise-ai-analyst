@@ -53,4 +53,9 @@ router.post('/ingest', (req, res) => proxyToFastAPI('/ingest', req, res))
 router.post('/retrieve', (req, res) => proxyToFastAPI('/retrieve', req, res))
 router.post('/generate', (req, res) => proxyToFastAPI('/generate', req, res))
 
+// Chat history
+router.get('/history/sessions', (req, res) => proxyToFastAPI('/history/sessions', req, res))
+router.get('/history/sessions/:id', (req, res) => proxyToFastAPI(`/history/sessions/${req.params.id}`, req, res))
+router.post('/history/messages', (req, res) => proxyToFastAPI('/history/messages', req, res))
+
 export default router

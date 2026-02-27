@@ -10,12 +10,21 @@ interface ChatRequest {
   strategy?: string
   top_k?: number
   stream?: boolean
+  session_id?: string
 }
 
 function sendJson(ws: WebSocket, data: unknown): void {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data))
   }
+}
+
+function persistMessage(body: Record<string, unknown>): void {
+  fetch(`${FASTAPI_URL}/history/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch((err) => console.error('[WS] Failed to persist message:', err))
 }
 
 function parseSSEEvents(buffer: string): { events: Array<{ event: string; data: string }>; remainder: string } {
@@ -44,7 +53,13 @@ async function handleChat(ws: WebSocket, msg: ChatRequest): Promise<void> {
   const strategy = msg.strategy ?? 'hybrid'
   const topK = msg.top_k ?? 10
   const stream = msg.stream ?? true
+  const sessionId = msg.session_id
   const totalStart = Date.now()
+
+  // Persist user message (fire-and-forget)
+  if (sessionId) {
+    persistMessage({ session_id: sessionId, role: 'user', content: query })
+  }
 
   // Step 1: Call /retrieve
   let context: string
@@ -110,6 +125,16 @@ Answer:`
       sendJson(ws, { type: 'message', content: genData.answer })
       const latencyMs = Date.now() - totalStart
       sendJson(ws, { type: 'done', latencyMs })
+
+      if (sessionId) {
+        persistMessage({
+          session_id: sessionId,
+          role: 'assistant',
+          content: genData.answer,
+          strategy,
+          latency_ms: latencyMs,
+        })
+      }
     } else {
       // Streaming: parse SSE events
       const body = generateRes.body
@@ -121,6 +146,8 @@ Answer:`
       const reader = body.getReader()
       const decoder = new TextDecoder()
       let sseBuffer = ''
+      let fullResponse = ''
+      let persisted = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -133,11 +160,22 @@ Answer:`
         for (const evt of parsed.events) {
           if (evt.event === 'token') {
             const tokenData = JSON.parse(evt.data)
+            fullResponse += tokenData.token
             sendJson(ws, { type: 'token', content: tokenData.token })
           } else if (evt.event === 'done') {
-            const doneData = JSON.parse(evt.data)
             const latencyMs = Date.now() - totalStart
             sendJson(ws, { type: 'done', latencyMs })
+
+            if (sessionId) {
+              persisted = true
+              persistMessage({
+                session_id: sessionId,
+                role: 'assistant',
+                content: fullResponse,
+                strategy,
+                latency_ms: latencyMs,
+              })
+            }
           } else if (evt.event === 'error') {
             const errData = JSON.parse(evt.data)
             sendJson(ws, { type: 'error', content: errData.error })
@@ -145,8 +183,17 @@ Answer:`
         }
       }
 
-      // If no done event was received from FastAPI, send one
-      // (this handles the case where the stream ends without an explicit done)
+      // If no done event was received from FastAPI, persist what we have
+      if (sessionId && fullResponse && !persisted) {
+        const latencyMs = Date.now() - totalStart
+        persistMessage({
+          session_id: sessionId,
+          role: 'assistant',
+          content: fullResponse,
+          strategy,
+          latency_ms: latencyMs,
+        })
+      }
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
