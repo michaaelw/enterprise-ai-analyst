@@ -1,11 +1,13 @@
 """Orchestrator agent - routes queries to specialized agents."""
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import AsyncIterator
+from typing import Any, Union
 
 import structlog
 
 from src.integrations.llm_providers.base import LLMProvider
+from src.models import AgentStatusEvent, TokenEvent, SourcesEvent
 from src.agents.sql_agent import SQLAgent
 from src.agents.rag_agent import RAGAgent
 
@@ -78,3 +80,30 @@ class OrchestratorAgent:
             return await self._sql_agent.execute(query, context)
 
         return await self._rag_agent.execute(query, context)
+
+    async def execute_stream(
+        self, query: str, context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[Union[AgentStatusEvent, TokenEvent, SourcesEvent]]:
+        """Stream classification + delegation as a sequence of events."""
+        yield AgentStatusEvent(
+            agent="orchestrator", phase="classifying",
+            message="Classifying query...",
+        )
+
+        intent = await self._classify(query)
+        logger.info("routing_query", intent=intent, query=query)
+
+        if intent == "sql":
+            yield AgentStatusEvent(
+                agent="orchestrator", phase="routing",
+                message="Routing to SQL Agent...",
+            )
+            async for event in self._sql_agent.execute_stream(query, context):
+                yield event
+        else:
+            yield AgentStatusEvent(
+                agent="orchestrator", phase="routing",
+                message="Routing to RAG Agent...",
+            )
+            async for event in self._rag_agent.execute_stream(query, context):
+                yield event

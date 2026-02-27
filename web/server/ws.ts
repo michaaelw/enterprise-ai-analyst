@@ -50,9 +50,8 @@ function parseSSEEvents(buffer: string): { events: Array<{ event: string; data: 
 
 async function handleChat(ws: WebSocket, msg: ChatRequest): Promise<void> {
   const query = msg.content
-  const strategy = msg.strategy ?? 'hybrid'
+  const strategy = msg.strategy ?? 'auto'
   const topK = msg.top_k ?? 10
-  const stream = msg.stream ?? true
   const sessionId = msg.session_id
   const totalStart = Date.now()
 
@@ -61,146 +60,103 @@ async function handleChat(ws: WebSocket, msg: ChatRequest): Promise<void> {
     persistMessage({ session_id: sessionId, role: 'user', content: query })
   }
 
-  // Step 1: Call /retrieve
-  let context: string
-  try {
-    const retrieveRes = await fetch(`${FASTAPI_URL}/retrieve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, strategy, top_k: topK }),
-    })
-
-    if (!retrieveRes.ok) {
-      const errText = await retrieveRes.text()
-      sendJson(ws, { type: 'error', content: `Retrieval failed: ${retrieveRes.status} ${errText}` })
-      return
-    }
-
-    const retrieveData = await retrieveRes.json()
-    context = retrieveData.context
-
-    sendJson(ws, {
-      type: 'sources',
-      sources: retrieveData.sources,
-      query: retrieveData.query,
-      strategy: retrieveData.strategy,
-    })
-  } catch (err) {
-    sendJson(ws, { type: 'error', content: `Retrieval error: ${err instanceof Error ? err.message : String(err)}` })
-    return
-  }
-
-  // Step 2: Build prompt
-  const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.
-
-Context:
-${context}
-
-Question: ${query}
-
-Answer:`
-
-  // Step 3: Call /generate
   const controller = new AbortController()
   const onClose = () => controller.abort()
   ws.on('close', onClose)
 
   try {
-    const generateRes = await fetch(`${FASTAPI_URL}/generate`, {
+    const res = await fetch(`${FASTAPI_URL}/query/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, stream }),
+      body: JSON.stringify({ query, strategy, top_k: topK }),
       signal: controller.signal,
     })
 
-    if (!generateRes.ok) {
-      const errText = await generateRes.text()
-      sendJson(ws, { type: 'error', content: `Generation failed: ${generateRes.status} ${errText}` })
+    if (!res.ok) {
+      const errText = await res.text()
+      sendJson(ws, { type: 'error', content: `Stream failed: ${res.status} ${errText}` })
       return
     }
 
-    if (!stream) {
-      // Non-streaming: read full JSON response
-      const genData = await generateRes.json()
-      sendJson(ws, { type: 'message', content: genData.answer })
-      const latencyMs = Date.now() - totalStart
-      sendJson(ws, { type: 'done', latencyMs })
+    const body = res.body
+    if (!body) {
+      sendJson(ws, { type: 'error', content: 'No response body from /query/stream' })
+      return
+    }
 
-      if (sessionId) {
-        persistMessage({
-          session_id: sessionId,
-          role: 'assistant',
-          content: genData.answer,
-          strategy,
-          latency_ms: latencyMs,
-        })
-      }
-    } else {
-      // Streaming: parse SSE events
-      const body = generateRes.body
-      if (!body) {
-        sendJson(ws, { type: 'error', content: 'No response body from generate endpoint' })
-        return
-      }
+    const reader = body.getReader()
+    const decoder = new TextDecoder()
+    let sseBuffer = ''
+    let fullResponse = ''
+    let persisted = false
 
-      const reader = body.getReader()
-      const decoder = new TextDecoder()
-      let sseBuffer = ''
-      let fullResponse = ''
-      let persisted = false
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      sseBuffer += decoder.decode(value, { stream: true })
+      const parsed = parseSSEEvents(sseBuffer)
+      sseBuffer = parsed.remainder
 
-        sseBuffer += decoder.decode(value, { stream: true })
-        const parsed = parseSSEEvents(sseBuffer)
-        sseBuffer = parsed.remainder
+      for (const evt of parsed.events) {
+        if (evt.event === 'status') {
+          const statusData = JSON.parse(evt.data)
+          sendJson(ws, {
+            type: 'status',
+            agent: statusData.agent,
+            phase: statusData.phase,
+            message: statusData.message,
+          })
+        } else if (evt.event === 'sources') {
+          const sourcesData = JSON.parse(evt.data)
+          sendJson(ws, {
+            type: 'sources',
+            sources: sourcesData.sources,
+            query: sourcesData.query,
+            strategy: sourcesData.strategy,
+          })
+        } else if (evt.event === 'token') {
+          const tokenData = JSON.parse(evt.data)
+          fullResponse += tokenData.token
+          sendJson(ws, { type: 'token', content: tokenData.token })
+        } else if (evt.event === 'done') {
+          const latencyMs = Date.now() - totalStart
+          sendJson(ws, { type: 'done', latencyMs })
 
-        for (const evt of parsed.events) {
-          if (evt.event === 'token') {
-            const tokenData = JSON.parse(evt.data)
-            fullResponse += tokenData.token
-            sendJson(ws, { type: 'token', content: tokenData.token })
-          } else if (evt.event === 'done') {
-            const latencyMs = Date.now() - totalStart
-            sendJson(ws, { type: 'done', latencyMs })
-
-            if (sessionId) {
-              persisted = true
-              persistMessage({
-                session_id: sessionId,
-                role: 'assistant',
-                content: fullResponse,
-                strategy,
-                latency_ms: latencyMs,
-              })
-            }
-          } else if (evt.event === 'error') {
-            const errData = JSON.parse(evt.data)
-            sendJson(ws, { type: 'error', content: errData.error })
+          if (sessionId) {
+            persisted = true
+            persistMessage({
+              session_id: sessionId,
+              role: 'assistant',
+              content: fullResponse,
+              strategy,
+              latency_ms: latencyMs,
+            })
           }
+        } else if (evt.event === 'error') {
+          const errData = JSON.parse(evt.data)
+          sendJson(ws, { type: 'error', content: errData.error })
         }
       }
+    }
 
-      // If no done event was received from FastAPI, persist what we have
-      if (sessionId && fullResponse && !persisted) {
-        const latencyMs = Date.now() - totalStart
-        persistMessage({
-          session_id: sessionId,
-          role: 'assistant',
-          content: fullResponse,
-          strategy,
-          latency_ms: latencyMs,
-        })
-      }
+    // If no done event was received from FastAPI, persist what we have
+    if (sessionId && fullResponse && !persisted) {
+      const latencyMs = Date.now() - totalStart
+      persistMessage({
+        session_id: sessionId,
+        role: 'assistant',
+        content: fullResponse,
+        strategy,
+        latency_ms: latencyMs,
+      })
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       console.log('[WS] Fetch aborted (client disconnected)')
       return
     }
-    sendJson(ws, { type: 'error', content: `Generation error: ${err instanceof Error ? err.message : String(err)}` })
+    sendJson(ws, { type: 'error', content: `Stream error: ${err instanceof Error ? err.message : String(err)}` })
   } finally {
     ws.off('close', onClose)
   }

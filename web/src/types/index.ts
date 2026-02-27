@@ -1,7 +1,7 @@
 export interface QueryRequest {
   query: string
   top_k?: number
-  strategy?: 'hybrid' | 'vector_only'
+  strategy?: 'hybrid' | 'vector_only' | 'auto'
 }
 
 export interface ChunkData {
@@ -51,9 +51,11 @@ export interface ChatEntry {
   latencyMs?: number
   strategy?: string
   timestamp: Date
+  agentStatus?: { agent: string; phase: string; message: string }
 }
 
 // WebSocket message types (discriminated union)
+export interface WsStatusMessage { type: 'status'; agent: string; phase: string; message: string }
 export interface WsSourcesMessage { type: 'sources'; sources: RetrievalResultData[]; query: string; strategy: string }
 export interface WsTokenMessage { type: 'token'; content: string }
 export interface WsFullMessage { type: 'message'; content: string }
@@ -61,7 +63,7 @@ export interface WsDoneMessage { type: 'done'; latencyMs: number }
 export interface WsErrorMessage { type: 'error'; content: string }
 export interface WsEchoMessage { type: 'echo'; content: string }
 
-export type WsMessage = WsSourcesMessage | WsTokenMessage | WsFullMessage | WsDoneMessage | WsErrorMessage | WsEchoMessage
+export type WsMessage = WsStatusMessage | WsSourcesMessage | WsTokenMessage | WsFullMessage | WsDoneMessage | WsErrorMessage | WsEchoMessage
 
 export interface WsChatRequest { type: 'chat'; content: string; strategy?: string; top_k?: number; stream?: boolean; session_id?: string }
 

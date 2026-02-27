@@ -8,7 +8,7 @@ import ChatMessage from '@/components/ChatMessage.vue'
 const messages = ref<ChatEntry[]>([])
 const inputQuery = ref('')
 const isLoading = ref(false)
-const strategy = ref<'hybrid' | 'vector_only'>('hybrid')
+const strategy = ref<'hybrid' | 'vector_only' | 'auto'>('auto')
 const topK = ref(10)
 const streamEnabled = ref(true)
 const chatContainer = ref<HTMLElement | null>(null)
@@ -49,19 +49,34 @@ function findEntry(id: string): ChatEntry | undefined {
   return messages.value.find((m) => m.id === id)
 }
 
+function getOrCreateAssistantEntry(): ChatEntry {
+  if (activeAssistantId.value) {
+    const existing = findEntry(activeAssistantId.value)
+    if (existing) return existing
+  }
+  const entry: ChatEntry = {
+    id: makeId(),
+    role: 'assistant',
+    content: '',
+    timestamp: new Date(),
+  }
+  messages.value.push(entry)
+  activeAssistantId.value = entry.id
+  return entry
+}
+
 const unsubscribe = onMessage(async (msg: WsMessage) => {
   switch (msg.type) {
+    case 'status': {
+      const entry = getOrCreateAssistantEntry()
+      entry.agentStatus = { agent: msg.agent, phase: msg.phase, message: msg.message }
+      await scrollToBottom()
+      break
+    }
     case 'sources': {
-      const entry: ChatEntry = {
-        id: makeId(),
-        role: 'assistant',
-        content: '',
-        sources: msg.sources,
-        strategy: msg.strategy,
-        timestamp: new Date(),
-      }
-      messages.value.push(entry)
-      activeAssistantId.value = entry.id
+      const entry = getOrCreateAssistantEntry()
+      entry.sources = msg.sources
+      entry.strategy = msg.strategy
       await scrollToBottom()
       break
     }
@@ -90,6 +105,7 @@ const unsubscribe = onMessage(async (msg: WsMessage) => {
         const entry = findEntry(activeAssistantId.value)
         if (entry) {
           entry.latencyMs = msg.latencyMs
+          entry.agentStatus = undefined
         }
       }
       activeAssistantId.value = null
@@ -102,6 +118,7 @@ const unsubscribe = onMessage(async (msg: WsMessage) => {
         const entry = findEntry(activeAssistantId.value)
         if (entry) {
           entry.content = `Error: ${msg.content}`
+          entry.agentStatus = undefined
         }
       } else {
         const errorEntry: ChatEntry = {
@@ -345,6 +362,7 @@ function onKeydown(e: KeyboardEvent) {
           v-model="strategy"
           class="text-xs border rounded px-2 py-1 text-gray-600 bg-gray-50"
         >
+          <option value="auto">Auto (AI routes)</option>
           <option value="hybrid">Hybrid</option>
           <option value="vector_only">Vector Only</option>
         </select>

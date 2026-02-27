@@ -129,3 +129,33 @@ class ChatSessionListResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     session: ChatSession
     messages: list[ChatMessage]
+
+
+# ---------------------------------------------------------------------------
+# Streaming event models (for /query/stream SSE endpoint)
+# ---------------------------------------------------------------------------
+
+
+class AgentStatusEvent(BaseModel):
+    event: Literal["status"] = "status"
+    agent: str          # "orchestrator", "rag_agent", "sql_agent"
+    phase: str          # "classifying", "retrieving", "generating_sql", etc.
+    message: str        # Human-readable: "RAG Agent: Retrieving documents..."
+
+
+class TokenEvent(BaseModel):
+    event: Literal["token"] = "token"
+    token: str
+
+
+class SourcesEvent(BaseModel):
+    event: Literal["sources"] = "sources"
+    sources: list[RetrievalResult]
+    query: str
+    strategy: str
+
+
+class QueryStreamRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    strategy: Literal["hybrid", "vector_only", "auto"] = "auto"

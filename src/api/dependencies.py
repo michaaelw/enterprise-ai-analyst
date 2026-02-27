@@ -14,6 +14,8 @@ from src.rag.retrieval.hybrid import HybridRetriever
 from src.rag.retrieval.vector_only import VectorOnlyRetriever
 from src.rag.chunking.fixed_size import FixedSizeChunker
 from src.agents.orchestrator import OrchestratorAgent
+from src.agents.rag_agent import RAGAgent
+from src.agents.sql_agent import SQLAgent
 
 
 @dataclass
@@ -29,6 +31,8 @@ class AppState:
     vector_retriever: VectorOnlyRetriever
     duckdb_store: DuckDBStore | None = None
     orchestrator: OrchestratorAgent | None = None
+    rag_agent: RAGAgent | None = None
+    sql_agent: SQLAgent | None = None
 
 
 _state: AppState | None = None

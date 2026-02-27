@@ -26,7 +26,7 @@ from src.agents.sql_agent import SQLAgent
 from src.agents.rag_agent import RAGAgent
 from src.agents.orchestrator import OrchestratorAgent
 from src.api.dependencies import AppState, set_state
-from src.api.routes import health, query, ingest, retrieve, generate, history
+from src.api.routes import health, query, ingest, retrieve, generate, history, query_stream
 
 
 logger = structlog.get_logger(__name__)
@@ -144,6 +144,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         vector_retriever=vector_retriever,
         duckdb_store=duckdb_store,
         orchestrator=orchestrator,
+        rag_agent=rag_agent,
+        sql_agent=sql_agent,
     ))
 
     # Seed demo documents if Qdrant is empty
@@ -167,3 +169,4 @@ app.include_router(ingest.router)
 app.include_router(retrieve.router)
 app.include_router(generate.router)
 app.include_router(history.router)
+app.include_router(query_stream.router)

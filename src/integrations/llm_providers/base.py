@@ -1,6 +1,7 @@
 """Protocol definitions for LLM and embedding providers."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 
 
@@ -14,6 +15,8 @@ class LLMProvider(Protocol):
         temperature: float = 0.0,
         max_tokens: int = 4096,
     ) -> str: ...
+
+    def stream(self, prompt: str, *, max_tokens: int = 4096) -> AsyncIterator[str]: ...
 
 
 @runtime_checkable

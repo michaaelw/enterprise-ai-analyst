@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import AsyncIterator
+from typing import Any, Union
 
 import structlog
 
 from src.integrations.data_warehouse.duckdb_store import DuckDBStore
 from src.integrations.llm_providers.base import LLMProvider
+from src.models import AgentStatusEvent, TokenEvent
 
 logger = structlog.get_logger(__name__)
 
@@ -101,6 +103,74 @@ class SQLAgent:
         answer = await self._llm_provider.generate(synthesis_prompt)
         logger.info("sql_agent.execute.complete", query=query, row_count=len(rows))
         return answer
+
+    async def execute_stream(
+        self, query: str, context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[Union[AgentStatusEvent, TokenEvent]]:
+        """Stream SQL generation, execution, and synthesis as events."""
+        yield AgentStatusEvent(
+            agent="sql_agent", phase="generating_sql",
+            message="SQL Agent: Generating SQL query...",
+        )
+
+        schema = await self._duckdb_store.get_schema()
+
+        sql_prompt = (
+            "You are a SQL expert. Given the following database schema and user question, "
+            "generate a single valid SELECT SQL query that answers the question.\n"
+            "Return ONLY the raw SQL — no explanations, no markdown fences, no comments.\n"
+            "Only SELECT queries are allowed.\n\n"
+            f"Schema:\n{schema}\n\n"
+            f"Question: {query}\n\n"
+            "SQL:"
+        )
+        raw_sql = await self._llm_provider.generate(sql_prompt, temperature=0.0)
+        sql = self._strip_fences(raw_sql)
+
+        yield AgentStatusEvent(
+            agent="sql_agent", phase="executing",
+            message="SQL Agent: Executing query...",
+        )
+
+        try:
+            rows = await self._duckdb_store.execute(sql)
+        except Exception as first_error:
+            yield AgentStatusEvent(
+                agent="sql_agent", phase="retrying",
+                message="SQL Agent: Retrying with corrected query...",
+            )
+            fix_prompt = (
+                "The following SQL query raised an error. Fix it so it executes correctly.\n"
+                "Return ONLY the corrected raw SQL — no explanations, no markdown fences.\n"
+                "Only SELECT queries are allowed.\n\n"
+                f"Schema:\n{schema}\n\n"
+                f"Original question: {query}\n\n"
+                f"Failing SQL:\n{sql}\n\n"
+                f"Error: {first_error}\n\n"
+                "Fixed SQL:"
+            )
+            raw_sql_fixed = await self._llm_provider.generate(fix_prompt, temperature=0.0)
+            sql = self._strip_fences(raw_sql_fixed)
+            rows = await self._duckdb_store.execute(sql)
+
+        table = self._format_results(rows)
+
+        yield AgentStatusEvent(
+            agent="sql_agent", phase="synthesizing",
+            message="SQL Agent: Synthesizing answer...",
+        )
+
+        synthesis_prompt = (
+            "You are a helpful data analyst. Given the user's question, the SQL query that was run, "
+            "and the results, provide a clear and concise natural language answer.\n\n"
+            f"Question: {query}\n\n"
+            f"SQL:\n{sql}\n\n"
+            f"Results:\n{table}\n\n"
+            "Answer:"
+        )
+
+        async for token in self._llm_provider.stream(synthesis_prompt):
+            yield TokenEvent(token=token)
 
     # ------------------------------------------------------------------
     # Private helpers

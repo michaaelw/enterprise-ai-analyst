@@ -50,6 +50,15 @@ const streaming = computed(() => props.entry.role === 'assistant' && !props.entr
       class="flex flex-col gap-1"
       :class="entry.role === 'user' ? 'items-end' : 'items-start'"
     >
+      <!-- Agent status indicator -->
+      <div v-if="entry.agentStatus" class="flex items-center gap-2 px-3 py-1.5 text-xs text-blue-600">
+        <svg class="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span>{{ entry.agentStatus.message }}</span>
+      </div>
+
       <div
         class="max-w-[75%] px-4 py-3 shadow-sm"
         :class="entry.role === 'user'
