@@ -7,11 +7,13 @@ from typing import Any
 from src.config import Settings
 from src.integrations.vector_db.qdrant_store import QdrantStore
 from src.integrations.graph_db.neo4j_store import Neo4jStore
+from src.integrations.data_warehouse.duckdb_store import DuckDBStore
 from src.rag.embeddings.pipeline import EmbeddingPipeline
 from src.rag.ingestion import IngestionPipeline
 from src.rag.retrieval.hybrid import HybridRetriever
 from src.rag.retrieval.vector_only import VectorOnlyRetriever
 from src.rag.chunking.fixed_size import FixedSizeChunker
+from src.agents.orchestrator import OrchestratorAgent
 
 
 @dataclass
@@ -25,6 +27,8 @@ class AppState:
     ingestion_pipeline: IngestionPipeline
     hybrid_retriever: HybridRetriever
     vector_retriever: VectorOnlyRetriever
+    duckdb_store: DuckDBStore | None = None
+    orchestrator: OrchestratorAgent | None = None
 
 
 _state: AppState | None = None

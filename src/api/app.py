@@ -10,6 +10,7 @@ from src.config import get_settings
 from src.observability.logging import configure_logging
 from src.integrations.vector_db.qdrant_store import QdrantStore
 from src.integrations.graph_db.neo4j_store import Neo4jStore
+from src.integrations.data_warehouse.duckdb_store import DuckDBStore
 from src.integrations.llm_providers.openai_provider import OpenAIEmbeddingProvider
 from src.integrations.llm_providers.anthropic_provider import AnthropicLLMProvider
 from src.integrations.llm_providers.ollama_provider import OllamaLLMProvider, OllamaEmbeddingProvider
@@ -18,6 +19,9 @@ from src.rag.ingestion import IngestionPipeline
 from src.rag.retrieval.hybrid import HybridRetriever
 from src.rag.retrieval.vector_only import VectorOnlyRetriever
 from src.rag.chunking.fixed_size import FixedSizeChunker
+from src.agents.sql_agent import SQLAgent
+from src.agents.rag_agent import RAGAgent
+from src.agents.orchestrator import OrchestratorAgent
 from src.api.dependencies import AppState, set_state
 from src.api.routes import health, query, ingest, retrieve, generate
 
@@ -81,6 +85,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     vector_retriever = VectorOnlyRetriever(vector_store=vector_store, embedding_provider=embedding_provider)
 
+    # Init DuckDB + agents
+    duckdb_store = DuckDBStore()
+    await duckdb_store.connect()
+
+    sql_agent = SQLAgent(duckdb_store=duckdb_store, llm_provider=llm_provider)
+    rag_agent = RAGAgent(
+        hybrid_retriever=hybrid_retriever,
+        vector_retriever=vector_retriever,
+        llm_provider=llm_provider,
+    )
+    orchestrator = OrchestratorAgent(
+        llm_provider=llm_provider,
+        sql_agent=sql_agent,
+        rag_agent=rag_agent,
+    )
+
     set_state(AppState(
         settings=settings,
         vector_store=vector_store,
@@ -91,10 +111,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ingestion_pipeline=ingestion_pipeline,
         hybrid_retriever=hybrid_retriever,
         vector_retriever=vector_retriever,
+        duckdb_store=duckdb_store,
+        orchestrator=orchestrator,
     ))
 
     yield
 
+    await duckdb_store.close()
     await vector_store.close()
     await graph_store.close()
 

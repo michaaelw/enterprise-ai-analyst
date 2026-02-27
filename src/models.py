@@ -64,12 +64,12 @@ class Relationship(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     top_k: int = 10
-    strategy: Literal["hybrid", "vector_only"] = "hybrid"
+    strategy: Literal["hybrid", "vector_only", "auto"] = "hybrid"
 
 
 class QueryResponse(BaseModel):
     answer: str
-    sources: list[RetrievalResult]
+    sources: list[RetrievalResult] = []
     query: str
     strategy: str
     latency_ms: float
